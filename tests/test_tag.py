@@ -7,6 +7,7 @@ from mythings.engine import EngineRequest, EngineResult, NoopEngine
 from mythings.github import GitHub
 from mythings.ledger import Ledger
 from mythings.policy import ALLOW, Action, Decision, Policy, PolicyResult
+from mythings.testing import ScriptedEngine
 
 from mynotes.tag import tag
 
@@ -44,14 +45,11 @@ class FakeGh:
         raise AssertionError(f"unexpected gh call: {argv}")
 
 
-class ScriptedEngine:
-    def __init__(self, payload: dict) -> None:
-        self.payload = payload
-        self.calls: list[EngineRequest] = []
+def scripted(payload: dict) -> ScriptedEngine:
+    return ScriptedEngine(json.dumps(payload))
 
-    def run(self, request: EngineRequest) -> EngineResult:
-        self.calls.append(request)
-        return EngineResult(text=json.dumps(self.payload))
+
+
 
 
 class SpyEngine:
@@ -94,7 +92,7 @@ def _tag(fake: FakeGh, engine, policy: Policy, tmp_path: Path, **kwargs):
 
 def test_tag_happy_path_extracts_tags_and_posts_comment(tmp_path: Path) -> None:
     fake = FakeGh(NOTE_ISSUE)
-    engine = ScriptedEngine(TAGGED)
+    engine = scripted(TAGGED)
 
     result = _tag(fake, engine, AllowAll(), tmp_path, comment=True)
 
@@ -121,7 +119,7 @@ def test_tag_caps_and_dedupes_at_seven_tags(tmp_path: Path) -> None:
         "title": "many tags",
         "tags": ["a", "b", "a", "c", "d", "e", "f", "g", "h", "i"],
     }
-    result = _tag(fake, ScriptedEngine(payload), AllowAll(), tmp_path)
+    result = _tag(fake, scripted(payload), AllowAll(), tmp_path)
 
     assert result.tags == ["a", "b", "c", "d", "e", "f", "g"]
 
@@ -153,7 +151,7 @@ def test_noop_engine_degrades_to_first_line_title(tmp_path: Path) -> None:
 
 def test_policy_deny_blocks_comment_but_still_records(tmp_path: Path) -> None:
     fake = FakeGh(NOTE_ISSUE)
-    result = _tag(fake, ScriptedEngine(TAGGED), DenyAll(), tmp_path, comment=True)
+    result = _tag(fake, scripted(TAGGED), DenyAll(), tmp_path, comment=True)
 
     assert result.outcome == "success"
     assert not result.posted
@@ -166,7 +164,7 @@ def test_policy_deny_blocks_comment_but_still_records(tmp_path: Path) -> None:
 def test_note_text_is_capped_before_reaching_engine(tmp_path: Path) -> None:
     long_issue = dict(NOTE_ISSUE, body="x" * 20_000, number=7)
     fake = FakeGh(long_issue)
-    engine = ScriptedEngine(TAGGED)
+    engine = scripted(TAGGED)
 
     result = _tag(fake, engine, AllowAll(), tmp_path, max_chars=10_000)
 
